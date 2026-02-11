@@ -42,29 +42,46 @@ function convert() {
 }
 
 // 请求关闭公式编辑页面
+function emitToHost(payload) {
+    parent.window.postMessage(payload, '*');
+}
+
 function closeFrame() {
-    parent.window.postMessage({ type: 'CLOSE_FORMULA' }, '*');
+    emitToHost({ type: 'CLOSE_FORMULA' });
 }
 
 function insertFormula() {
     if (insert.disabled == true) return;
 
-    // 将生成的mjx-container套在span中
+    // 直接提取 SVG，避免新版编辑器过滤 mjx-container 导致空白
     let output = document.getElementById('output');
-    let sp = document.createElement('span');
-    if ($(block).prop('checked')) {
-        output.childNodes[0].style = 'overflow-x:auto; outline:0; display:block; text-align: center; margin: 15px 0px;'
-        output.childNodes[0].setAttribute('display', true);
-        output.childNodes[0].childNodes[0].style = 'height:auto; max-width:300% !important;'
+    let svg = output.querySelector('svg');
+    if (!svg) {
+        alert('公式还未渲染完成，请稍后重试。');
+        return;
     }
 
-    //output.childNodes[0].setAttribute('data-formula', input.value.trim().replace(/\\/g, '\\\\'));
-    output.childNodes[0].setAttribute('data-formula', input.value.trim());
+    let sp = document.createElement('span');
     sp.setAttribute('style', 'cursor:pointer;');
-    sp.appendChild(output.childNodes[0]);
-    sp.innerHTML = sp.innerHTML.replace(/<mjx-assistive-mml.+?<\/mjx-assistive-mml>/g, "");
 
-    parent.window.postMessage({ type: 'INSERT_FORMULA', text: sp.outerHTML }, '*');
+    let svgClone = svg.cloneNode(true);
+    svgClone.setAttribute('data-formula', input.value.trim());
+
+    if ($(block).prop('checked')) {
+        svgClone.style.overflowX = 'auto';
+        svgClone.style.outline = '0';
+        svgClone.style.display = 'block';
+        svgClone.style.textAlign = 'center';
+        svgClone.style.margin = '15px 0px';
+        svgClone.setAttribute('display', true);
+        if (svgClone.firstElementChild) {
+            svgClone.firstElementChild.style.height = 'auto';
+            svgClone.firstElementChild.style.maxWidth = '300%';
+        }
+    }
+
+    sp.appendChild(svgClone);
+    emitToHost({ type: 'INSERT_FORMULA', text: sp.outerHTML });
     input.value = '';
     closeFrame();
 }

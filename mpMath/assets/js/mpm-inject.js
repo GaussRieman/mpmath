@@ -1,42 +1,98 @@
 // 当前编辑对象和是否在编辑(插入)模式
-let editing, editingMode;
+let editing;
+let editingMode;
 
-// 等待文档加载完毕
-var readyStateCheckInterval = setInterval(function() {
-    if (document.readyState === 'complete') {
-        clearInterval(readyStateCheckInterval);
+function handleMessage(event) {
+    if (!event.data || !event.data.type) return;
 
-        // 处理来自iframe的消息
-        window.addEventListener("message", function(event) {
-            if (event.data.type) {
-                // 处理关闭公式编辑框的消息
-                if (event.data.type == 'CLOSE_FORMULA') {
-                    document.getElementById('popup').style.display = 'none';
-                    setTimeout(function() { $('#ueditor_0')[0].focus(); }, 10); // 重置焦点
-                    editingMode = false; // 取消编辑
-                }
-                // 处理插入公式的消息
-                else if (event.data.type == 'INSERT_FORMULA') {
-                    // 如果在编辑模式就替换当前编辑元素, 否则插入新元素
-                    if (editingMode == true) {
-                        let beg = event.data.text.indexOf('>') + 1;
-                        let end = event.data.text.lastIndexOf('<') - 1;
-                        editing.innerHTML = event.data.text.substring(beg, end);
-                        editingMode = false; // 还原为非编辑模式
-                    } else {
-                        window.UE.getEditor('js_editor').execCommand('insertHTML', '\xA0' + event.data.text + '\xA0');
-                    }
-                }
-            }
-        });
+    if (event.data.type === 'CLOSE_FORMULA') {
+        const popup = document.getElementById('popup');
+        if (!popup) return;
 
-        // 编辑事件监听
-        $('#ueditor_0').contents().find('.view').on('click', '[data-formula]', function(event) {
-            $('#popup')[0].style.display = 'block';
-            $('#popup')[0].contentWindow.postMessage({ type: 'CHANGE_INPUT', text: $(this).attr('data-formula'), isBlock: $(this).attr('display') }, '*');
-            setTimeout(function() { $('#popup')[0].focus(); }, 10);
+        popup.style.display = 'none';
+        setTimeout(function () {
+            const editor = document.getElementById('ueditor_0');
+            if (editor) editor.focus();
+        }, 10);
+        editingMode = false;
+        return;
+    }
+
+    if (event.data.type === 'INSERT_FORMULA') {
+        if (editingMode === true && editing) {
+            const beg = event.data.text.indexOf('>') + 1;
+            const end = event.data.text.lastIndexOf('<') - 1;
+            editing.innerHTML = event.data.text.substring(beg, end);
+            editingMode = false;
+            return;
+        }
+
+        if (window.UE && window.UE.getEditor) {
+            window.UE.getEditor('js_editor').execCommand('insertHTML', '\xA0' + event.data.text + '\xA0');
+        }
+    }
+}
+
+function bindFormulaEditClick() {
+    const frame = document.getElementById('ueditor_0');
+    if (!frame || frame.dataset.mpmEditBound === '1') return;
+
+    const bindView = function () {
+        const frameDoc = frame.contentDocument;
+        if (!frameDoc) return;
+
+        const view = frameDoc.querySelector('.view');
+        if (!view || view.dataset.mpmEditBound === '1') return;
+
+        $(view).on('click', '[data-formula]', function () {
+            const popup = document.getElementById('popup');
+            if (!popup) return;
+
+            popup.style.display = 'block';
+            popup.contentWindow.postMessage(
+                {
+                    type: 'CHANGE_INPUT',
+                    text: $(this).attr('data-formula'),
+                    isBlock: $(this).attr('display')
+                },
+                '*'
+            );
+            setTimeout(function () {
+                popup.focus();
+            }, 10);
             editing = this.parentElement;
             editingMode = true;
         });
-    }
+
+        view.dataset.mpmEditBound = '1';
+    };
+
+    frame.addEventListener('load', bindView);
+    frame.dataset.mpmEditBound = '1';
+    bindView();
+}
+
+window.addEventListener('message', handleMessage);
+
+bindFormulaEditClick();
+var injectChecks = 0;
+var maxInjectChecks = 60;
+var injectTimer = null;
+var injectObserver = new MutationObserver(function () {
+    if (injectTimer) return;
+    injectTimer = setTimeout(function () {
+        injectTimer = null;
+        bindFormulaEditClick();
+        injectChecks += 1;
+
+        var frame = document.getElementById('ueditor_0');
+        if ((frame && frame.dataset.mpmEditBound === '1') || injectChecks >= maxInjectChecks) {
+            injectObserver.disconnect();
+        }
+    }, 120);
+});
+
+injectObserver.observe(document.documentElement, {
+    childList: true,
+    subtree: true
 });
